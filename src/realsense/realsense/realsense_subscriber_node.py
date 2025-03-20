@@ -302,17 +302,265 @@
 # if __name__ == '__main__':
 #     main()
 
+# import rclpy
+# from rclpy.node import Node
+# from sensor_msgs.msg import Image
+# from geometry_msgs.msg import Twist, Vector3
+# from yolov8_msgs.msg import Yolov8Inference, InferenceResult
+# from std_msgs.msg import Bool
+# import cv2
+# from cv_bridge import CvBridge
+# from ultralytics import YOLO
+
+# class RealSenseSubscriber(Node):
+#     def __init__(self):
+#         super().__init__('realsense_subscriber_node')
+
+#         # Initialize OpenCV bridge
+#         self.bridge = CvBridge()
+
+#         # Load YOLOv8 model
+#         self.model = YOLO('/home/james/realsense_ws/src/realsense/model/solar_panel.pt')
+
+#         # ROS2 Subscribers
+#         self.color_sub = self.create_subscription(
+#             Image, 
+#             '/camera/realsense_node/color/image_raw', 
+#             self.color_callback, 
+#             10)
+
+#         # ROS2 Publishers
+#         self.inference_pub = self.create_publisher(Yolov8Inference, '/yolov8/detections', 10)
+#         self.img_pub = self.create_publisher(Image, "/yolov8/annotated_image", 10)
+#         self.cmd_vel_publisher = self.create_publisher(Twist, "/offboard_velocity_cmd", 10)
+#         self.arm_publisher = self.create_publisher(Bool, "/arm_message", 10)
+
+#         # Movement control variables
+#         self.counter = 0
+#         self.counter_limit = 10
+#         self.distance_front = False
+
+#         # Automatically arm the drone when the node starts
+#         self.arm_drone()
+
+#     def arm_drone(self):
+#         arm_msg = Bool()
+#         arm_msg.data = True
+#         self.arm_publisher.publish(arm_msg)
+#         self.get_logger().info("Drone armed.")
+
+#     # def color_callback(self, msg):
+#     #     try:
+#     #         img = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+
+#     #         results = self.model(img)
+
+#     #         frame_width = img.shape[1]
+#     #         frame_height = img.shape[0]
+#     #         center_region_width = 300  # 300 px width threshold
+#     #         center_region_height = 100  # 100 px height threshold
+
+#     #         inference_msg = Yolov8Inference()
+#     #         inference_msg.header.stamp = self.get_clock().now().to_msg()
+#     #         inference_msg.header.frame_id = "inference"
+
+#     #         # Define center bounding box region
+#     #         central_x_min = (frame_width - center_region_width) // 2
+#     #         central_x_max = (frame_width + center_region_width) // 2
+#     #         central_y_min = (frame_height - center_region_height) // 2
+#     #         central_y_max = (frame_height + center_region_height) // 2
+
+#     #         # Draw center bounding box (red rectangle)
+#     #         cv2.rectangle(img, (central_x_min, central_y_min), (central_x_max, central_y_max), (0, 0, 255), 2)
+
+#     #         # Variables to track global bounding box
+#     #         x_min, y_min, x_max, y_max = float("inf"), float("inf"), float("-inf"), float("-inf")
+#     #         object_detected = False  # Track if any object is detected
+
+#     #         for r in results:
+#     #             masks = r.masks
+#     #             confidences = r.boxes.conf
+#     #             boxes = r.boxes.xyxy  # Bounding boxes (xyxy format)
+
+#     #             if masks is not None and boxes is not None:
+#     #                 for confidence, box in zip(confidences, boxes):
+#     #                     if confidence < 0.5:
+#     #                         continue
+
+#     #                     object_detected = True  # At least one object is detected
+
+#     #                     # Extract bounding box coordinates
+#     #                     x1, y1, x2, y2 = map(int, box.tolist())
+
+#     #                     # Expand global bounding box to include this box
+#     #                     x_min = min(x_min, x1)
+#     #                     y_min = min(y_min, y1)
+#     #                     x_max = max(x_max, x2)
+#     #                     y_max = max(y_max, y2)
+
+#     #         if object_detected:
+#     #             # Compute the fused center point
+#     #             bbox_center_x = (x_min + x_max) // 2
+#     #             bbox_center_y = (y_min + y_max) // 2
+
+#     #             print(f"Fused Bounding Box: ({x_min}, {y_min}) to ({x_max}, {y_max})")
+#     #             print(f"Fused Center Point: ({bbox_center_x}, {bbox_center_y})")
+
+#     #             # Draw the fused bounding box (blue)
+#     #             cv2.rectangle(img, (x_min, y_min), (x_max, y_max), (255, 0, 0), 2)
+
+#     #             # Draw the fused center point (red circle)
+#     #             cv2.circle(img, (bbox_center_x, bbox_center_y), 5, (0, 0, 255), -1)
+
+#     #             # Movement logic based on the fused center
+#     #             linear_vec = Vector3()
+#     #             angular_vec = Vector3()
+
+#     #             if bbox_center_x < central_x_min:
+#     #                 linear_vec.y = 1.0  # Move left
+#     #             elif bbox_center_x > central_x_max:
+#     #                 linear_vec.y = -1.0  # Move right
+
+#     #             if bbox_center_y < central_y_min:
+#     #                 linear_vec.z = 1.0  # Move up
+#     #             elif bbox_center_y > central_y_max:
+#     #                 linear_vec.z = -1.0  # Move down
+
+#     #             twist = Twist(linear=linear_vec, angular=angular_vec)
+#     #             self.cmd_vel_publisher.publish(twist)
+
+#     #         # Image publishing
+#     #         annotated_frame = results[0].plot()
+
+#     #         # Overlay bounding box and center marker on the final annotated image
+#     #         final_image = cv2.addWeighted(annotated_frame, 0.8, img, 0.2, 0)
+
+#     #         img_msg = self.bridge.cv2_to_imgmsg(final_image, encoding="bgr8")
+#     #         self.img_pub.publish(img_msg)
+#     #         self.inference_pub.publish(inference_msg)
+
+#     #     except Exception as e:
+#     #         self.get_logger().error(f"Error processing image: {str(e)}")
+
+#     def color_callback(self, msg):
+#         try:
+#             img = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+
+#             results = self.model(img)
+
+#             frame_width = img.shape[1]
+#             frame_height = img.shape[0]
+#             center_region_width = 300  # 300 px width threshold
+#             center_region_height = 100  # 100 px height threshold
+
+#             inference_msg = Yolov8Inference()
+#             inference_msg.header.stamp = self.get_clock().now().to_msg()
+#             inference_msg.header.frame_id = "inference"
+
+#             # Define center bounding box region
+#             central_x_min = (frame_width - center_region_width) // 2
+#             central_x_max = (frame_width + center_region_width) // 2
+#             central_y_min = (frame_height - center_region_height) // 2
+#             central_y_max = (frame_height + center_region_height) // 2
+
+#             # Draw center bounding box (red rectangle)
+#             cv2.rectangle(img, (central_x_min, central_y_min), (central_x_max, central_y_max), (0, 0, 255), 2)
+
+#             # Variables to track the lowest-right object
+#             selected_bbox = None
+#             max_position_sum = float("-inf")
+
+#             for r in results:
+#                 masks = r.masks
+#                 confidences = r.boxes.conf
+#                 boxes = r.boxes.xyxy  # Bounding boxes (xyxy format)
+
+#                 if masks is not None and boxes is not None:
+#                     for confidence, box in zip(confidences, boxes):
+#                         if confidence < 0.5:
+#                             continue
+
+#                         # Extract bounding box coordinates
+#                         x1, y1, x2, y2 = map(int, box.tolist())
+
+#                         # Calculate "right-bottom priority" score
+#                         position_sum = x2 + y2  # Prioritize the object with the highest x_max + y_max
+
+#                         # Update the lowest-right object selection
+#                         if position_sum > max_position_sum:
+#                             max_position_sum = position_sum
+#                             selected_bbox = (x1, y1, x2, y2)
+
+#             if selected_bbox:
+#                 x_min, y_min, x_max, y_max = selected_bbox
+
+#                 # Compute the center point of the selected object
+#                 bbox_center_x = (x_min + x_max) // 2
+#                 bbox_center_y = (y_min + y_max) // 2
+
+#                 print(f"Selected Bounding Box: ({x_min}, {y_min}) to ({x_max}, {y_max})")
+#                 print(f"Selected Center Point: ({bbox_center_x}, {bbox_center_y})")
+
+#                 # Draw the selected bounding box (green)
+#                 cv2.rectangle(img, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
+
+#                 # Draw the center point (red circle)
+#                 cv2.circle(img, (bbox_center_x, bbox_center_y), 5, (0, 0, 255), -1)
+
+#                 # Movement logic based on the selected object's center
+#                 linear_vec = Vector3()
+#                 angular_vec = Vector3()
+
+#                 if bbox_center_x < central_x_min:
+#                     linear_vec.y = 1.0  # Move left
+#                 elif bbox_center_x > central_x_max:
+#                     linear_vec.y = -1.0  # Move right
+
+#                 if bbox_center_y < central_y_min:
+#                     linear_vec.z = 1.0  # Move up
+#                 elif bbox_center_y > central_y_max:
+#                     linear_vec.z = -1.0  # Move down
+
+#                 twist = Twist(linear=linear_vec, angular=angular_vec)
+#                 self.cmd_vel_publisher.publish(twist)
+
+#             # Image publishing
+#             annotated_frame = results[0].plot()
+
+#             # Overlay bounding box and center marker on the final annotated image
+#             final_image = cv2.addWeighted(annotated_frame, 0.8, img, 0.2, 0)
+
+#             img_msg = self.bridge.cv2_to_imgmsg(final_image, encoding="bgr8")
+#             self.img_pub.publish(img_msg)
+#             self.inference_pub.publish(inference_msg)
+
+#         except Exception as e:
+#             self.get_logger().error(f"Error processing image: {str(e)}")
+
+# def main(args=None):
+#     rclpy.init(args=args)
+#     realsense_subscriber = RealSenseSubscriber()
+#     rclpy.spin(realsense_subscriber)
+#     realsense_subscriber.destroy_node()
+#     rclpy.shutdown()
+
+# if __name__ == '__main__':
+#     main()
+
 import rclpy
 from rclpy.node import Node
+from px4_msgs.msg import VehicleCommand, OffboardControlMode, TrajectorySetpoint, VehicleOdometry, VehicleStatus
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
+import time
+import numpy as np
+
 from sensor_msgs.msg import Image
-from geometry_msgs.msg import Twist, Vector3
-from yolov8_msgs.msg import Yolov8Inference, InferenceResult
-from std_msgs.msg import Bool
+from yolov8_msgs.msg import Yolov8Inference
 import cv2
 from cv_bridge import CvBridge
 from ultralytics import YOLO
 
-class RealSenseSubscriber(Node):
+class ZDCalNode(Node):
     def __init__(self):
         super().__init__('realsense_subscriber_node')
 
@@ -322,126 +570,67 @@ class RealSenseSubscriber(Node):
         # Load YOLOv8 model
         self.model = YOLO('/home/james/realsense_ws/src/realsense/model/solar_panel.pt')
 
+        # Define QoS profile for PX4 compatibility
+        qos_profile = QoSProfile(
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1
+        )
+
+        # Publishers
+        self.inference_pub = self.create_publisher(Yolov8Inference, '/yolov8/detections', 10)
+        self.img_pub = self.create_publisher(Image, "/yolov8/annotated_image", 10)
+
+        self.vehicle_command_publisher = self.create_publisher(VehicleCommand, '/fmu/in/vehicle_command', qos_profile)
+        self.offboard_control_mode_publisher = self.create_publisher(OffboardControlMode, '/fmu/in/offboard_control_mode', qos_profile)
+        self.trajectory_setpoint_publisher = self.create_publisher(TrajectorySetpoint, '/fmu/in/trajectory_setpoint', qos_profile)
+        
         # ROS2 Subscribers
         self.color_sub = self.create_subscription(
             Image, 
             '/camera/realsense_node/color/image_raw', 
             self.color_callback, 
             10)
+        
+        self.create_subscription(
+            VehicleOdometry,
+            '/fmu/out/vehicle_odometry',
+            self.odometry_callback,
+            qos_profile
+        )
 
-        # ROS2 Publishers
-        self.inference_pub = self.create_publisher(Yolov8Inference, '/yolov8/detections', 10)
-        self.img_pub = self.create_publisher(Image, "/yolov8/annotated_image", 10)
-        self.cmd_vel_publisher = self.create_publisher(Twist, "/offboard_velocity_cmd", 10)
-        self.arm_publisher = self.create_publisher(Bool, "/arm_message", 10)
+        self.create_subscription(
+            VehicleStatus,
+            '/fmu/out/vehicle_status',
+            self.vehicle_status_callback,
+            qos_profile
+        )
+
+        # State variables
+        self.current_position = [0.0, 0.0, 0.0]  # Current position in NED
+        self.angular_velocity = [0.0, 0.0, 0.0]
+        self.current_mode = None  # Current flight mode
+        self.armed = False  # Armed state
+        self.state = "ARMING"  # State machine state
+        self.takeoff_altitude = -8.0  # Takeoff altitude in NED (8 meters up)
+        
+        # Timing variables
+        self.state_change_time = self.get_clock().now()
+        self.yaw_angle = 0  # Instantaneous target yaw
+        self.running = True
 
         # Movement control variables
-        self.counter = 0
-        self.counter_limit = 10
-        self.distance_front = False
+        self.vx = 0.0
+        self.vy = 0.0
+        self.vz = 0.0
+        self.target_acquired = False
+        self.last_detection_time = None  # Track when an object was last detected
 
-        # Automatically arm the drone when the node starts
-        self.arm_drone()
-
-    def arm_drone(self):
-        arm_msg = Bool()
-        arm_msg.data = True
-        self.arm_publisher.publish(arm_msg)
-        self.get_logger().info("Drone armed.")
-
-    # def color_callback(self, msg):
-    #     try:
-    #         img = self.bridge.imgmsg_to_cv2(msg, "bgr8")
-
-    #         results = self.model(img)
-
-    #         frame_width = img.shape[1]
-    #         frame_height = img.shape[0]
-    #         center_region_width = 300  # 300 px width threshold
-    #         center_region_height = 100  # 100 px height threshold
-
-    #         inference_msg = Yolov8Inference()
-    #         inference_msg.header.stamp = self.get_clock().now().to_msg()
-    #         inference_msg.header.frame_id = "inference"
-
-    #         # Define center bounding box region
-    #         central_x_min = (frame_width - center_region_width) // 2
-    #         central_x_max = (frame_width + center_region_width) // 2
-    #         central_y_min = (frame_height - center_region_height) // 2
-    #         central_y_max = (frame_height + center_region_height) // 2
-
-    #         # Draw center bounding box (red rectangle)
-    #         cv2.rectangle(img, (central_x_min, central_y_min), (central_x_max, central_y_max), (0, 0, 255), 2)
-
-    #         # Variables to track global bounding box
-    #         x_min, y_min, x_max, y_max = float("inf"), float("inf"), float("-inf"), float("-inf")
-    #         object_detected = False  # Track if any object is detected
-
-    #         for r in results:
-    #             masks = r.masks
-    #             confidences = r.boxes.conf
-    #             boxes = r.boxes.xyxy  # Bounding boxes (xyxy format)
-
-    #             if masks is not None and boxes is not None:
-    #                 for confidence, box in zip(confidences, boxes):
-    #                     if confidence < 0.5:
-    #                         continue
-
-    #                     object_detected = True  # At least one object is detected
-
-    #                     # Extract bounding box coordinates
-    #                     x1, y1, x2, y2 = map(int, box.tolist())
-
-    #                     # Expand global bounding box to include this box
-    #                     x_min = min(x_min, x1)
-    #                     y_min = min(y_min, y1)
-    #                     x_max = max(x_max, x2)
-    #                     y_max = max(y_max, y2)
-
-    #         if object_detected:
-    #             # Compute the fused center point
-    #             bbox_center_x = (x_min + x_max) // 2
-    #             bbox_center_y = (y_min + y_max) // 2
-
-    #             print(f"Fused Bounding Box: ({x_min}, {y_min}) to ({x_max}, {y_max})")
-    #             print(f"Fused Center Point: ({bbox_center_x}, {bbox_center_y})")
-
-    #             # Draw the fused bounding box (blue)
-    #             cv2.rectangle(img, (x_min, y_min), (x_max, y_max), (255, 0, 0), 2)
-
-    #             # Draw the fused center point (red circle)
-    #             cv2.circle(img, (bbox_center_x, bbox_center_y), 5, (0, 0, 255), -1)
-
-    #             # Movement logic based on the fused center
-    #             linear_vec = Vector3()
-    #             angular_vec = Vector3()
-
-    #             if bbox_center_x < central_x_min:
-    #                 linear_vec.y = 1.0  # Move left
-    #             elif bbox_center_x > central_x_max:
-    #                 linear_vec.y = -1.0  # Move right
-
-    #             if bbox_center_y < central_y_min:
-    #                 linear_vec.z = 1.0  # Move up
-    #             elif bbox_center_y > central_y_max:
-    #                 linear_vec.z = -1.0  # Move down
-
-    #             twist = Twist(linear=linear_vec, angular=angular_vec)
-    #             self.cmd_vel_publisher.publish(twist)
-
-    #         # Image publishing
-    #         annotated_frame = results[0].plot()
-
-    #         # Overlay bounding box and center marker on the final annotated image
-    #         final_image = cv2.addWeighted(annotated_frame, 0.8, img, 0.2, 0)
-
-    #         img_msg = self.bridge.cv2_to_imgmsg(final_image, encoding="bgr8")
-    #         self.img_pub.publish(img_msg)
-    #         self.inference_pub.publish(inference_msg)
-
-    #     except Exception as e:
-    #         self.get_logger().error(f"Error processing image: {str(e)}")
-
+        # Timer to control the state machine
+        self.timer = self.create_timer(0.05, self.timer_callback)  # 20Hz
+        self.publish_offboard_timer = self.create_timer(0.01, self.publish_offboard_control_mode)  # 100Hz
+        self.last_movement_time = None
+    
     def color_callback(self, msg):
         try:
             img = self.bridge.imgmsg_to_cv2(msg, "bgr8")
@@ -491,15 +680,17 @@ class RealSenseSubscriber(Node):
                             max_position_sum = position_sum
                             selected_bbox = (x1, y1, x2, y2)
 
-            if selected_bbox:
+            if selected_bbox and self.state == "ALLIGN":
                 x_min, y_min, x_max, y_max = selected_bbox
+                self.target_acquired = True
+                self.last_detection_time = self.get_clock().now()
 
                 # Compute the center point of the selected object
                 bbox_center_x = (x_min + x_max) // 2
                 bbox_center_y = (y_min + y_max) // 2
 
-                print(f"Selected Bounding Box: ({x_min}, {y_min}) to ({x_max}, {y_max})")
-                print(f"Selected Center Point: ({bbox_center_x}, {bbox_center_y})")
+                self.get_logger().debug(f"Selected Bounding Box: ({x_min}, {y_min}) to ({x_max}, {y_max})")
+                self.get_logger().debug(f"Selected Center Point: ({bbox_center_x}, {bbox_center_y})")
 
                 # Draw the selected bounding box (green)
                 cv2.rectangle(img, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
@@ -508,22 +699,33 @@ class RealSenseSubscriber(Node):
                 cv2.circle(img, (bbox_center_x, bbox_center_y), 5, (0, 0, 255), -1)
 
                 # Movement logic based on the selected object's center
-                linear_vec = Vector3()
-                angular_vec = Vector3()
+                self.vx = 0.0
+                self.vy = 0.0
+                self.vz = 0.0
 
                 if bbox_center_x < central_x_min:
-                    linear_vec.y = 1.0  # Move left
+                    self.vy = -0.5  # Move left (-y)
                 elif bbox_center_x > central_x_max:
-                    linear_vec.y = -1.0  # Move right
+                    self.vy = 0.5  # Move right (+y)
 
                 if bbox_center_y < central_y_min:
-                    linear_vec.z = 1.0  # Move up
+                    self.vz = -0.5  # Move up (-z)
                 elif bbox_center_y > central_y_max:
-                    linear_vec.z = -1.0  # Move down
-
-                twist = Twist(linear=linear_vec, angular=angular_vec)
-                self.cmd_vel_publisher.publish(twist)
-
+                    self.vz = 0.5  # Move down (+z)
+                
+                # Center position check - if object is centered, transition to HOVER
+                # if (central_x_min <= bbox_center_x <= central_x_max and
+                #     central_y_min <= bbox_center_y <= central_y_max):
+                #     self.vx = 0.0
+                #     self.vy = 0.0
+                #     self.vz = 0.0
+                #     if self.state == "ALLIGN":
+                #         self.state = "HOVER"
+                #         self.state_change_time = self.get_clock().now()
+                #         self.get_logger().info("Object centered, transitioning to HOVER")
+                
+                self.publish_trajectory_setpoint(vx=self.vx, vy=self.vy, vz=self.vz)
+            
             # Image publishing
             annotated_frame = results[0].plot()
 
@@ -537,12 +739,209 @@ class RealSenseSubscriber(Node):
         except Exception as e:
             self.get_logger().error(f"Error processing image: {str(e)}")
 
+    def odometry_callback(self, msg):
+        """Callback to update the current position."""
+        self.current_position = [
+            msg.position[0],  # X in NED
+            msg.position[1],  # Y in NED
+            msg.position[2],  # Z in NED
+        ]
+        self.angular_velocity = [
+            msg.angular_velocity[0],  # Roll angular velocity
+            msg.angular_velocity[1],  # Pitch angular velocity
+            msg.angular_velocity[2],  # Yaw angular velocity
+        ]
+
+    def vehicle_status_callback(self, msg):
+        """Callback to update the current mode."""
+        self.current_mode = msg.nav_state
+        if msg.arming_state == 2:
+            self.armed = True
+        else:
+            self.armed = False
+
+    def publish_offboard_control_mode(self):
+        """Publish OffboardControlMode message."""
+        try:
+            offboard_msg = OffboardControlMode()
+            offboard_msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
+            offboard_msg.position = False
+            offboard_msg.velocity = True  # Enable velocity control
+            offboard_msg.acceleration = False
+            offboard_msg.attitude = False
+            offboard_msg.body_rate = False
+            self.offboard_control_mode_publisher.publish(offboard_msg)
+        except Exception as e:
+            self.get_logger().error(f"Error publishing offboard control mode: {str(e)}")
+
+    def publish_trajectory_setpoint(self, vx=0.0, vy=0.0, vz=0.0, yaw_rate=0.0):
+        """Publish a trajectory setpoint in velocity mode."""
+        try:
+            trajectory_msg = TrajectorySetpoint()
+            trajectory_msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
+            trajectory_msg.velocity[0] = vx
+            trajectory_msg.velocity[1] = vy
+            trajectory_msg.velocity[2] = vz
+            trajectory_msg.position[0] = float('nan')
+            trajectory_msg.position[1] = float('nan')
+            trajectory_msg.position[2] = float('nan')
+            trajectory_msg.acceleration[0] = float('nan')
+            trajectory_msg.acceleration[1] = float('nan')
+            trajectory_msg.acceleration[2] = float('nan')
+            trajectory_msg.yaw = float('nan')
+            self.trajectory_setpoint_publisher.publish(trajectory_msg)
+        except Exception as e:
+            self.get_logger().error(f"Error publishing trajectory setpoint: {str(e)}")
+
+    def publish_vehicle_command(self, command, param1=0.0, param2=0.0, param3=0.0):
+        """Publish a VehicleCommand."""
+        try:
+            msg = VehicleCommand()
+            msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
+            msg.param1 = param1
+            msg.param2 = param2
+            msg.param3 = param3
+            msg.command = command
+            msg.target_system = 1
+            msg.target_component = 1
+            msg.source_system = 1
+            msg.source_component = 1
+            msg.from_external = True
+            self.vehicle_command_publisher.publish(msg)
+            self.get_logger().info(f"Published VehicleCommand: command={command}, param1={param1}, param2={param2}, param3={param3}")
+        except Exception as e:
+            self.get_logger().error(f"Error publishing vehicle command: {str(e)}")
+
+    def arm_drone(self):
+        """Command the drone to arm."""
+        self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, 1.0)
+
+    def publish_takeoff(self):
+        """Send takeoff command to PX4."""
+        self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_SET_MODE, 1.0, 4.0, 2.0)  # original take off altitude
+        self.get_logger().info(f"Sending takeoff command.")
+
+    def time_since_state_change(self):
+        """Get time since last state change in seconds."""
+        return (self.get_clock().now() - self.state_change_time).nanoseconds / 1e9
+
+    def change_state(self, new_state):
+        """Change state with proper logging and timing."""
+        self.get_logger().info(f"State transition: {self.state} -> {new_state}")
+        self.state = new_state
+        self.state_change_time = self.get_clock().now()
+
+    def timer_callback(self):
+        """Main loop that implements the state machine."""
+        try:
+            if self.state == "ARMING":
+                if not self.armed:
+                    if self.current_mode != 4:
+                        self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_SET_MODE, 1.0, 4.0, 3.0)
+                    self.arm_drone()
+                    self.publish_takeoff()
+                else:
+                    if self.current_mode != 4:
+                        self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_SET_MODE, 1.0, 4.0, 3.0)
+                    self.get_logger().info("Drone armed and taking off")
+                    
+                    if self.time_since_state_change() >= 15.0:  # Wait for 15 seconds before switching to TAKEOFF
+                        self.change_state("TAKEOFF")
+
+            elif self.state == "TAKEOFF":
+                if self.time_since_state_change() >= 10.0:  # Wait for 10 seconds before switching to ALLIGN
+                    self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_SET_MODE, 1.0, 6.0)
+                    self.change_state("ALLIGN")
+                    self.target_acquired = False
+                    self.last_detection_time = None
+                
+            elif self.state == "ALLIGN":
+                # If no object detected, move upwards continuously
+                if not self.target_acquired or (self.last_detection_time and 
+                (self.get_clock().now() - self.last_detection_time).nanoseconds / 1e9 > 1.0):
+                    # No target or haven't seen one recently (more than 1 second)
+                    self.vz = -0.5  # Move upwards
+                    self.vx = 0.0
+                    self.vy = 0.0
+                    self.publish_trajectory_setpoint(vx=self.vx, vy=self.vy, vz=self.vz)
+                    self.get_logger().debug("Moving upward to search for object")
+                    self.last_movement_time = self.get_clock().now()  # Update last movement time
+                
+                # If any velocity is non-zero, we're making adjustments
+                if abs(self.vx) > 0.01 or abs(self.vy) > 0.01 or abs(self.vz) > 0.01:
+                    self.last_movement_time = self.get_clock().now()  # Update last movement time
+                
+                # Check if we've been stable (no movement) for 5 seconds
+                if self.target_acquired and ((self.get_clock().now() - self.last_movement_time).nanoseconds / 1e9 >= 5.0):
+                    self.get_logger().info("No adjustments for 5 seconds, transitioning to HOVER")
+                    self.change_state("HOVER")
+                
+                # Check if we've been in ALLIGN state for more than 20 seconds without finding an object
+                if self.time_since_state_change() >= 20.0 and not self.target_acquired:
+                    self.get_logger().info("No object detected for 20 seconds, transitioning to LANDING")
+                    self.change_state("LANDING")
+            
+            elif self.state == "MOVING_FORWARD":
+                self.publish_trajectory_setpoint(vx=1.0, vy=0.0, vz=0.0)  # Move forward
+                if self.time_since_state_change() >= 10.0:
+                    self.publish_trajectory_setpoint(vx=0.0, vy=0.0, vz=0.0)  # Stop moving
+                    self.change_state("MOVING_LEFT")
+
+            elif self.state == "MOVING_LEFT":
+                self.publish_trajectory_setpoint(vx=0.0, vy=1.0, vz=0.0)  # Move left
+                if self.time_since_state_change() >= 10.0:
+                    self.publish_trajectory_setpoint(vx=0.0, vy=0.0, vz=0.0)  # Stop moving
+                    self.change_state("MOVING_RIGHT")
+
+            elif self.state == "MOVING_RIGHT":
+                self.publish_trajectory_setpoint(vx=0.0, vy=-1.0, vz=0.0)  # Move right
+                if self.time_since_state_change() >= 10.0:
+                    self.publish_trajectory_setpoint(vx=0.0, vy=0.0, vz=0.0)  # Stop moving
+                    self.change_state("MOVING_BACKWARD")
+
+            elif self.state == "MOVING_BACKWARD":
+                self.publish_trajectory_setpoint(vx=-1.0, vy=0.0, vz=0.0)  # Move backward
+                if self.time_since_state_change() >= 10.0:
+                    self.publish_trajectory_setpoint(vx=0.0, vy=0.0, vz=0.0)  # Stop moving
+                    self.change_state("HOVER")
+
+            elif self.state == "HOVER":
+                self.publish_trajectory_setpoint(vx=0.0, vy=0.0, vz=0.0)  # Stay in place
+                if self.time_since_state_change() >= 5.0:  # Hover for 5 seconds
+                    self.change_state("LANDING")
+
+            elif self.state == "LANDING":
+                self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_SET_MODE, 1.0, 4.0, 6.0)
+                self.get_logger().info("Landing...")
+                if self.time_since_state_change() >= 5.0:  # Wait for 5 seconds before declaring landed
+                    self.change_state("LANDED")
+
+            elif self.state == "LANDED":
+                self.get_logger().info("Drone has landed successfully.")
+                # Do nothing else, we're done
+
+        except Exception as e:
+            self.get_logger().error(f"Error in timer callback: {str(e)}")
+            # Safety fallback - try to land if something goes wrong
+            if self.state != "LANDING" and self.state != "LANDED":
+                self.get_logger().error("Error detected, attempting emergency landing")
+                self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_SET_MODE, 1.0, 4.0, 6.0)
+                self.change_state("LANDING")
+
 def main(args=None):
     rclpy.init(args=args)
-    realsense_subscriber = RealSenseSubscriber()
-    rclpy.spin(realsense_subscriber)
-    realsense_subscriber.destroy_node()
-    rclpy.shutdown()
+    node = ZDCalNode()
+
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.get_logger().info("Keyboard Interrupt detected. Shutting down...")
+    except Exception as e:
+        node.get_logger().error(f"Unexpected error: {str(e)}")
+    finally:
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 if __name__ == '__main__':
     main()
