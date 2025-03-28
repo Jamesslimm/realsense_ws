@@ -11,7 +11,11 @@ setup.py
 launch/realsense.launch.py
 realsense/__init__.py
 realsense/realsense_subscriber_node.py
+realsense.egg-info/PKG-INFO
+realsense.egg-info/SOURCES.txt
+realsense.egg-info/dependency_links.txt
+realsense.egg-info/entry_points.txt
+realsense.egg-info/requires.txt
+realsense.egg-info/top_level.txt
+realsense.egg-info/zip-safe
 resource/realsense
-test/test_copyright.py
-test/test_flake8.py
-test/test_pep257.py
