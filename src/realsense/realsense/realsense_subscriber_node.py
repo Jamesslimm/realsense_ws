@@ -558,7 +558,7 @@ import logging
 from cv_bridge import CvBridge
 # logging.getLogger('ultralytics').setLevel(logging.ERROR)
 from geometry_msgs.msg import Point
-from std_msgs.msg import Float64
+from std_msgs.msg import Float64, Float32MultiArray
 import matplotlib.pyplot as plt
 import open3d as o3d 
 import sensor_msgs_py.point_cloud2 as pc2
@@ -617,7 +617,7 @@ class ZDCalNode(Node):
 
         self.create_subscription(
             VehicleStatus,
-            '/fmu/out/vehicle_status_v1', # '/fmu/out/vehicle_status',
+            '/fmu/out/vehicle_status', # '/fmu/out/vehicle_status',
             self.vehicle_status_callback,
             qos_profile
         )
@@ -655,7 +655,54 @@ class ZDCalNode(Node):
         self.timer = self.create_timer(0.05, self.timer_callback)  # 20Hz
         self.publish_offboard_timer = self.create_timer(0.01, self.publish_offboard_control_mode)  # 100Hz
         self.last_movement_time = None
-    
+
+        # Teraranger LIDAR Subscription
+        # Create subscriber
+        self.create_subscription(
+            Float32MultiArray,
+            '/teraranger_evo/distances',
+            self.teraranger_callback,
+            10
+        )
+        
+        # Define sensor positions [front, right, back, left]
+        self.directions = ['front', 'right', 'back', 'left']
+        self.processed_distances = []
+        
+        # Max distance when sensor returns inf (in meters)
+        self.lidar_max_distance = 60.0
+
+    def teraranger_callback(self, msg):
+            # Process each distance value            
+            for i, distance in enumerate(msg.data):
+                direction = self.directions[i]
+                
+                # Handle special cases
+                if distance == float('-inf'):
+                    # Object too close - set to 0
+                    self.processed_distances.append(0.0)
+                    self.get_logger().debug(f"{direction}: Below minimum range (-inf), setting to 0.0m")
+                elif distance == float('inf'):
+                    # Object too far - set to max distance
+                    self.processed_distances.append(self.lidar_max_distance)
+                    self.get_logger().debug(f"{direction}: Above maximum range (inf), setting to {self.lidar_max_distance}m")
+                elif distance != distance:  # Check for NaN
+                    # Invalid reading - set to 0
+                    self.processed_distances.append(0.0)
+                    self.get_logger().debug(f"{direction}: Invalid reading (nan), setting to 0.0m")
+                else:
+                    # Normal reading
+                    self.processed_distances.append(distance)
+                    self.get_logger().debug(f"{direction}: Valid reading: {distance:.3f}m")
+            
+            # Log the processed distances
+            self.get_logger().info(
+                f"Processed distances - Front: {self.processed_distances[0]:.2f}m, "
+                f"Right: {self.processed_distances[1]:.2f}m, "
+                f"Back: {self.processed_distances[2]:.2f}m, "
+                f"Left: {self.processed_distances[3]:.2f}m"
+            )
+        
     def color_callback(self, msg):
         try:
             img = self.bridge.imgmsg_to_cv2(msg, "bgr8")
