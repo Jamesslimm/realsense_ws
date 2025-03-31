@@ -547,6 +547,7 @@
 # if __name__ == '__main__':
 #     main()
 
+# pip3 install openpyxl
 import rclpy
 from rclpy.node import Node
 from px4_msgs.msg import VehicleCommand, OffboardControlMode, TrajectorySetpoint, VehicleOdometry, VehicleStatus
@@ -566,6 +567,9 @@ from sensor_msgs.msg import Image, PointCloud2
 from yolov8_msgs.msg import Yolov8Inference
 import cv2
 from ultralytics import YOLO
+import os
+from datetime import datetime
+import pandas as pd
 
 class ZDCalNode(Node):
     def __init__(self):
@@ -617,7 +621,7 @@ class ZDCalNode(Node):
 
         self.create_subscription(
             VehicleStatus,
-            '/fmu/out/vehicle_status', # '/fmu/out/vehicle_status',
+            '/fmu/out/vehicle_status_v1', # '/fmu/out/vehicle_status',
             self.vehicle_status_callback,
             qos_profile
         )
@@ -638,7 +642,7 @@ class ZDCalNode(Node):
         
         # Timing variables
         self.state_change_time = self.get_clock().now()
-        self.yaw_angle = 0  # Instantaneous target yaw
+        self.current_yaw = 0.0  # Instantaneous target yaw
         self.running = True
 
         # Movement control variables
@@ -667,12 +671,106 @@ class ZDCalNode(Node):
         
         # Define sensor positions [front, right, back, left]
         self.directions = ['front', 'right', 'back', 'left']
-        self.processed_distances = []
+        self.processed_distances = [float('inf'), float('inf'), float('inf'), float('inf')]
         
         # Max distance when sensor returns inf (in meters)
         self.lidar_max_distance = 60.0
 
+        # Obstacle avoidance parameters
+        self.safe_distance = 5.0  # Distance threshold in meters to start slowing down
+        self.min_distance = 2.0   # Minimum distance for complete stop
+        
+        # PID controller parameters for velocity control
+        self.kp = 0.3  # Proportional gain
+        self.ki = 0.05 # Integral gain
+        self.kd = 0.1  # Derivative gain
+        
+        # PID controller state variables for each direction
+        self.prev_errors = {'front': 0.0, 'right': 0.0, 'back': 0.0, 'left': 0.0}
+        self.integral_terms = {'front': 0.0, 'right': 0.0, 'back': 0.0, 'left': 0.0}
+        self.last_time = {'front': None, 'right': None, 'back': None, 'left': None}
+        
+        # Data logging variables
+        self.current_velocity = [0.0, 0.0, 0.0]  # [vx, vy, vz]
+        self.data_log = []
+        self.log_timer = self.create_timer(0.1, self.log_data_callback)  # 10Hz data logging
+        
+        # Create directory for data logs if it doesn't exist
+        self.log_dir = os.path.expanduser('~/drone_data_logs')
+        if not os.path.exists(self.log_dir):
+            os.makedirs(self.log_dir)
+        
+        # Create a timestamp for the log file
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        self.log_file = os.path.join(self.log_dir, f'drone_data_{timestamp}.xlsx')
+    
+    def log_data_callback(self):
+        """Collect data at regular intervals"""
+        current_time = time.time()
+        
+        # Create data row
+        data_row = {
+            'timestamp': current_time,
+            'state': self.state,
+            'position_x': self.current_position[0],
+            'position_y': self.current_position[1],
+            'position_z': self.current_position[2],
+            'velocity_x': self.current_velocity[0],
+            'velocity_y': self.current_velocity[1],
+            'velocity_z': self.current_velocity[2],
+            'yaw': self.current_yaw,
+            'distance_front': self.processed_distances[0] if len(self.processed_distances) > 0 else float('inf'),
+            'distance_right': self.processed_distances[1] if len(self.processed_distances) > 1 else float('inf'),
+            'distance_back': self.processed_distances[2] if len(self.processed_distances) > 2 else float('inf'),
+            'distance_left': self.processed_distances[3] if len(self.processed_distances) > 3 else float('inf'),
+        }
+        
+        # Append to the data log
+        self.data_log.append(data_row)
+
+        # Periodically print the size of the data log
+        if len(self.data_log) % 10 == 0:  # Every 10 entries
+            self.get_logger().info(f"Data log size: {len(self.data_log)} entries")
+
+    def save_data_to_excel(self):
+        """Save collected data to Excel file"""
+        self.get_logger().info(f"Attempting to save {len(self.data_log)} data entries")
+    
+        """Save collected data to Excel file"""
+        if len(self.data_log) == 0:
+            self.get_logger().warn("No data to save")
+            return
+            
+        try:
+            # Convert to DataFrame
+            df = pd.DataFrame(self.data_log)
+            
+            # Add human-readable timestamps
+            start_time = df['timestamp'].iloc[0]
+            df['elapsed_time'] = df['timestamp'] - start_time
+            df['datetime'] = pd.to_datetime(df['timestamp'], unit='s')
+            
+            # Convert radians to degrees for better readability
+            df['yaw_degrees'] = df['yaw'].apply(lambda x: math.degrees(x))
+            
+            # Reorder columns for better readability
+            columns_order = [
+                'datetime', 'elapsed_time', 'state',
+                'position_x', 'position_y', 'position_z',
+                'velocity_x', 'velocity_y', 'velocity_z',
+                'yaw', 'yaw_degrees',
+                'distance_front', 'distance_right', 'distance_back', 'distance_left'
+            ]
+            df = df[columns_order]
+            
+            # Save to Excel
+            df.to_excel(self.log_file, index=False, engine='openpyxl')
+            self.get_logger().info(f"Data saved to {self.log_file}")
+        except Exception as e:
+            self.get_logger().error(f"Error saving data to Excel: {e}")
+
     def teraranger_callback(self, msg):
+            self.processed_distances = []
             # Process each distance value            
             for i, distance in enumerate(msg.data):
                 direction = self.directions[i]
@@ -702,6 +800,102 @@ class ZDCalNode(Node):
                 f"Back: {self.processed_distances[2]:.2f}m, "
                 f"Left: {self.processed_distances[3]:.2f}m"
             )
+    
+    def get_distance_in_direction(self, direction):
+        """Get the distance from the LIDAR in a specific direction."""
+        direction_index = {
+            "forward": 0,  # front
+            "right": 1,    # right
+            "backward": 2, # back
+            "left": 3      # left
+        }
+        
+        idx = direction_index.get(direction, 0)
+        return self.processed_distances[idx] if len(self.processed_distances) > idx else self.lidar_max_distance
+    
+    def calculate_velocity_with_obstacle_avoidance(self, direction, desired_speed=1.0):
+        """
+        Calculate velocity components with obstacle avoidance based on LIDAR readings.
+        Returns velocity scaled by PID controller for collision avoidance.
+        """
+        # Get raw velocity components based on direction
+        vx, vy = self.calculate_velocity(direction, speed=desired_speed)
+        
+        # Get the distance in the current movement direction
+        distance = self.get_distance_in_direction(direction)
+        
+        # Calculate velocity scale factor using PID controller
+        scale_factor = self.calculate_velocity_scale(direction, distance)
+        
+        # Apply scale factor to velocity components
+        adjusted_vx = vx * scale_factor
+        adjusted_vy = vy * scale_factor
+        
+        self.get_logger().info(
+            f"Direction: {direction}, Distance: {distance:.2f}m, "
+            f"Scale: {scale_factor:.2f}, "
+            f"Velocity adjusted from ({vx:.2f}, {vy:.2f}) to ({adjusted_vx:.2f}, {adjusted_vy:.2f})"
+        )
+        
+        return adjusted_vx, adjusted_vy
+
+    def calculate_velocity_scale(self, direction, distance):
+        """
+        Calculate velocity scale factor using PID controller based on distance to obstacle.
+        Returns a value between 0.0 (stop) and 1.0 (full speed).
+        """
+        current_time = time.time()
+        
+        # If distance is above safe_distance, move at full speed
+        if distance >= self.safe_distance:
+            # Reset PID terms when we're in safe zone
+            self.prev_errors[direction] = 0.0
+            self.integral_terms[direction] = 0.0
+            self.last_time[direction] = current_time
+            return 1.0
+            
+        # If distance is below min_distance, stop
+        if distance <= self.min_distance:
+            return 0.0
+            
+        # Calculate error: how far we are from safe_distance
+        # As we get closer to min_distance, error grows
+        error = (distance - self.min_distance) / (self.safe_distance - self.min_distance)
+        
+        # Initialize time if first run
+        if self.last_time[direction] is None:
+            self.last_time[direction] = current_time
+            self.prev_errors[direction] = error
+            return error  # Return proportional term only on first run
+            
+        # Calculate time delta
+        dt = current_time - self.last_time[direction]
+        if dt <= 0:
+            dt = 0.05  # Use default if time hasn't advanced
+            
+        # Calculate PID terms
+        # Proportional term
+        p_term = error
+        
+        # Integral term with anti-windup
+        self.integral_terms[direction] += error * dt
+        self.integral_terms[direction] = max(0.0, min(1.0, self.integral_terms[direction]))  # Clamp
+        i_term = self.ki * self.integral_terms[direction]
+        
+        # Derivative term
+        d_term = self.kd * (error - self.prev_errors[direction]) / dt if dt > 0 else 0.0
+        
+        # Calculate PID output
+        pid_output = self.kp * p_term + i_term + d_term
+        
+        # Clamp output between 0 and 1
+        velocity_scale = max(0.0, min(1.0, pid_output))
+        
+        # Store values for next iteration
+        self.prev_errors[direction] = error
+        self.last_time[direction] = current_time
+        
+        return velocity_scale
         
     def color_callback(self, msg):
         try:
@@ -846,19 +1040,19 @@ class ZDCalNode(Node):
                     horizontal_error = central_x_min - bbox_center_x
                     horizontal_p_gain = 0.005  # Adjust for smoother horizontal movement
                     speed = min(1.0, horizontal_error * horizontal_p_gain)
-                    h_vx, h_vy = self.calculate_velocity("left", speed=speed)
+                    h_vx, h_vy = self.calculate_velocity_with_obstacle_avoidance("left", speed=speed)
                     # self.vx, self.vy = vx, vy
                 elif bbox_center_x > central_x_max:
                     # Move right with proportional speed
                     horizontal_error = bbox_center_x - central_x_max
                     horizontal_p_gain = 0.005  # Adjust for smoother horizontal movement
                     speed = min(1.0, horizontal_error * horizontal_p_gain)
-                    h_vx, h_vy = self.calculate_velocity("right", speed=speed)
+                    h_vx, h_vy = self.calculate_velocity_with_obstacle_avoidance("right", speed=speed)
                     # self.vx, self.vy = vx, vy
 
                 # Check if area is too large - move backward
                 if bbox_area_ratio > 80:
-                    b_vx, b_vy = self.calculate_velocity("backward", speed=0.5)
+                    b_vx, b_vy = self.calculate_velocity_with_obstacle_avoidance("backward", speed=0.5)
                     # self.vx, self.vy = vx, vy
                 
                 # if (h_vx and h_vy and b_vx and b_vy) != 0:
@@ -1107,7 +1301,8 @@ class ZDCalNode(Node):
                     plt.legend()
                     plt.title("Isolated Solar Panel Depth Map with Dropping Point")
                     plt.show()
-
+                    
+                    self.save_data_to_excel()
                     self.change_state("RETURN_TO_LAUNCH")
 
                     # elif user_confirmation == 'n':
@@ -1244,6 +1439,8 @@ class ZDCalNode(Node):
     def publish_trajectory_setpoint(self, vx=0.0, vy=0.0, vz=0.0, yaw_rate=0.0):
         """Publish a trajectory setpoint in velocity mode."""
         try:
+            # Store current velocity for logging
+            self.current_velocity = [vx, vy, vz]
             if self.offboard_mode == "VELOCITY":
                 trajectory_msg = TrajectorySetpoint()
                 trajectory_msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
@@ -1380,6 +1577,12 @@ class ZDCalNode(Node):
             elif self.state == "RETURN_TO_LAUNCH":
                 self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_SET_MODE, 1.0, 4.0, 5.0)
                 self.get_logger().info("Returning...")
+
+                # # Add periodic saving during hover
+                # if self.time_since_state_change() >= 2.5:  # Save halfway through hover
+                #     self.get_logger().info("Saving data during hover")
+                #     self.save_data_to_excel()
+
                 if self.time_since_state_change() >= 5.0:  # Wait for 5 seconds before declaring landed
                     self.change_state("LANDED")
 
