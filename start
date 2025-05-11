@@ -1,8 +1,0 @@
-// Depth Camera
-cd ~/realsense_ws
-source install/setup.bash
-# Launch the camera node
-ros2 launch realsense realsense.launch.py
-
-# In another terminal, run your subscriber
-ros2 run realsense realsense_subscriber

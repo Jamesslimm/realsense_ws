@@ -1,1 +1,0 @@
-/home/james/realsense_ws/build/yolov8_msgs/rosidl_typesupport_fastrtps_c/yolov8_msgs/msg/detail/inference_result__rosidl_typesupport_fastrtps_c.h

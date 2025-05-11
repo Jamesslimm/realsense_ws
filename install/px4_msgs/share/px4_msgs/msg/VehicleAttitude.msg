@@ -1,1 +1,0 @@
-/home/james/realsense_ws/src/px4_msgs/msg/VehicleAttitude.msg
